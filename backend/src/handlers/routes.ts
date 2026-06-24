@@ -1,6 +1,8 @@
 import { Express, Router } from 'express';
 import { authenticate } from '../middleware/authenticate';
-import * as AuthHandler from './auth.handler';
+import { authorize } from '../middleware/authorize';
+import * as AuthHandler     from './auth.handler';
+import * as ListingsHandler from './listings.handler';
 
 export function registerRoutes(app: Express): void {
   const api = Router();
@@ -13,12 +15,23 @@ export function registerRoutes(app: Express): void {
   auth.post('/logout',      AuthHandler.logout);
   api.use('/auth', auth);
 
-  // ── Protected routes placeholder ──────────────────────────
-  // Listings, agents, areas, viewings, reviews, transactions
-  // will be wired here as each module is built
-  const protected_ = Router();
-  protected_.use(authenticate);
-  api.use('/', protected_);
+  // ── Listings — public reads ────────────────────────────────
+  api.get('/listings',                   ListingsHandler.search);
+  api.get('/listings/:id',               ListingsHandler.getOne);
+  api.post('/listings/:id/whatsapp-tap', ListingsHandler.recordWhatsappTap);
+
+  // ── Protected routes ──────────────────────────────────────
+  const guard = Router();
+  guard.use(authenticate);
+
+  // Listings — agent/landlord writes
+  guard.post(
+    '/listings/:id/confirm',
+    authorize('AGENT', 'LANDLORD', 'ADMIN'),
+    ListingsHandler.confirmAvailability,
+  );
+
+  api.use('/', guard);
 
   app.use('/api', api);
 }
