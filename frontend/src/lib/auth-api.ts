@@ -1,3 +1,4 @@
+const IS_MOCK  = process.env.NEXT_PUBLIC_MOCK === 'true';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
 
 async function post<T>(path: string, body?: unknown, token?: string): Promise<T> {
@@ -32,18 +33,43 @@ export interface AuthResponse {
   accessToken: string;
 }
 
-export function requestOTP(phone: string): Promise<void> {
+// ── Mock auth ────────────────────────────────────────────────────────────────
+// When NEXT_PUBLIC_MOCK=true:
+//   - requestOTP always succeeds (no SMS sent)
+//   - verifyOTP accepts "123456" as a valid code
+//   - logout is a no-op
+
+const MOCK_USER: AuthUser = {
+  id:          'mock-user-1',
+  fullName:    'Alex Njoroge',
+  phoneNumber: '+254712345678',
+  role:        'AGENT',
+};
+
+function delay(ms = 800) {
+  return new Promise<void>((r) => setTimeout(r, ms));
+}
+
+export async function requestOTP(phone: string): Promise<void> {
+  if (IS_MOCK) { await delay(); return; }
   return post('/auth/request-otp', { phone });
 }
 
-export function verifyOTP(phone: string, otp: string): Promise<AuthResponse> {
+export async function verifyOTP(phone: string, otp: string): Promise<AuthResponse> {
+  if (IS_MOCK) {
+    await delay();
+    if (otp !== '123456') throw new Error('Incorrect code. Use 123456 in mock mode.');
+    return { user: { ...MOCK_USER, phoneNumber: phone }, accessToken: 'mock-access-token' };
+  }
   return post<AuthResponse>('/auth/verify-otp', { phone, otp });
 }
 
-export function refreshToken(): Promise<{ accessToken: string }> {
+export async function refreshToken(): Promise<{ accessToken: string }> {
+  if (IS_MOCK) return { accessToken: 'mock-access-token' };
   return post<{ accessToken: string }>('/auth/refresh');
 }
 
-export function logout(token?: string): Promise<void> {
+export async function logout(token?: string): Promise<void> {
+  if (IS_MOCK) { await delay(400); return; }
   return post('/auth/logout', undefined, token);
 }
