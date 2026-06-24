@@ -13,7 +13,7 @@ const LEN = 6;
 export default function OtpInput({ value, onChange, disabled }: Props) {
   const refs = useRef<(HTMLInputElement | null)[]>([]);
 
-  const digits = value.padEnd(LEN, '').slice(0, LEN).split('');
+  const digits = Array.from({ length: LEN }, (_, i) => value[i] ?? '');
 
   function focus(i: number) {
     refs.current[i]?.focus();
