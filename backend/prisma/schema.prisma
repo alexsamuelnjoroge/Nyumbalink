@@ -1,0 +1,412 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── ENUMS ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  RENTER
+  LANDLORD
+  AGENT
+  ADMIN
+}
+
+enum AgentType {
+  LANDLORD
+  EARB_AGENT
+  INFORMAL_AGENT
+}
+
+enum UnitType {
+  BEDSITTER
+  SINGLE_ROOM
+  ONE_BED
+  TWO_BED
+  THREE_BED
+  SQ
+  STUDIO
+}
+
+enum Furnishing {
+  FURNISHED
+  SEMI
+  UNFURNISHED
+}
+
+enum ListingStatus {
+  DRAFT
+  PENDING_REVIEW
+  ACTIVE
+  TAKEN
+  EXPIRED
+  SUSPENDED
+}
+
+enum CommissionPayer {
+  TENANT
+  LANDLORD
+  NONE
+}
+
+enum WaterSupply {
+  HOURS_24
+  RATIONED
+  BOREHOLE
+  TANK
+  MIXED
+}
+
+enum PowerReliability {
+  STABLE
+  MODERATE_OUTAGES
+  FREQUENT_OUTAGES
+}
+
+enum NoiseLevel {
+  QUIET
+  MODERATE
+  NOISY
+}
+
+enum SecurityLevel {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum ViewingStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum TransactionType {
+  HOLDING_DEPOSIT
+  VIEWING_PLEDGE
+}
+
+enum TransactionStatus {
+  INITIATED
+  PENDING
+  HELD
+  RELEASED
+  REFUNDED
+  FAILED
+}
+
+enum ReportReason {
+  FAKE_LISTING
+  WRONG_PRICE
+  ALREADY_TAKEN
+  SCAM
+  MISLEADING_PHOTOS
+  OTHER
+}
+
+enum ReportStatus {
+  OPEN
+  INVESTIGATING
+  RESOLVED
+  DISMISSED
+}
+
+enum NotificationChannel {
+  IN_APP
+  SMS
+  WHATSAPP
+  PUSH
+}
+
+// ─── MODELS ──────────────────────────────────────────────────────────────────
+
+model User {
+  id              String    @id @default(uuid())
+  phoneNumber     String    @unique
+  email           String?   @unique
+  fullName        String
+  nationalId      String?   @unique
+  profilePhotoUrl String?
+  role            Role      @default(RENTER)
+  isPhoneVerified Boolean   @default(false)
+  isIdVerified    Boolean   @default(false)
+  isMpesaVerified Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  lastActiveAt    DateTime?
+
+  agentProfile     AgentProfile?
+  listings         Listing[]
+  savedListings    SavedListing[]
+  viewingsAsRenter ViewingRequest[] @relation("RenterViewings")
+  reviewsGiven     Review[]         @relation("ReviewsGiven")
+  reports          Report[]
+  notifications    Notification[]
+  transactions     Transaction[]    @relation("RenterTransactions")
+  refreshTokens    RefreshToken[]
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model AgentProfile {
+  id                  String    @id @default(uuid())
+  userId              String    @unique
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentType           AgentType @default(INFORMAL_AGENT)
+  agencyName          String?
+  earbNumber          String?
+  earbVerified        Boolean   @default(false)
+  kraPinVerified      Boolean   @default(false)
+  businessRegVerified Boolean   @default(false)
+  officeArea          String?
+  verificationTier    Int       @default(0)
+  chargesCommission   Boolean   @default(true)
+  commissionMonths    Decimal?  @db.Decimal(3, 1)
+  totalListings       Int       @default(0)
+  totalLettings       Int       @default(0)
+  avgRating           Decimal   @default(0) @db.Decimal(2, 1)
+  responseRate        Decimal?  @db.Decimal(5, 2)
+  avgResponseHours    Decimal?  @db.Decimal(5, 1)
+  strikes             Int       @default(0)
+  isSuspended         Boolean   @default(false)
+  suspensionReason    String?
+  createdAt           DateTime  @default(now())
+
+  viewingRequests ViewingRequest[] @relation("AgentViewings")
+  reviews         Review[]         @relation("ReviewsReceived")
+}
+
+model Area {
+  id               String            @id @default(uuid())
+  name             String
+  slug             String            @unique
+  parentAreaId     String?
+  parentArea       Area?             @relation("AreaHierarchy", fields: [parentAreaId], references: [id])
+  subAreas         Area[]            @relation("AreaHierarchy")
+  centerLat        Decimal?          @db.Decimal(10, 7)
+  centerLng        Decimal?          @db.Decimal(10, 7)
+  boundaryGeojson  Json?
+  waterSituation   WaterSupply?
+  waterNotes       String?
+  powerReliability PowerReliability?
+  powerNotes       String?
+  noiseLevel       NoiseLevel?
+  securityLevel    SecurityLevel?
+  areaNotes        String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  listings Listing[]
+}
+
+model Listing {
+  id                   String          @id @default(uuid())
+  agentId              String
+  agent                User            @relation(fields: [agentId], references: [id])
+  areaId               String
+  area                 Area            @relation(fields: [areaId], references: [id])
+  title                String
+  description          String?
+  unitType             UnitType
+  addressText          String?
+  lat                  Decimal?        @db.Decimal(10, 7)
+  lng                  Decimal?        @db.Decimal(10, 7)
+  monthlyRent          Int
+  depositMonths        Decimal?        @db.Decimal(3, 1)
+  advanceMonths        Decimal?        @db.Decimal(3, 1)
+  commissionAmount     Int?
+  commissionPayer      CommissionPayer @default(TENANT)
+  floorNumber          Int?
+  totalFloors          Int?
+  selfContained        Boolean         @default(true)
+  furnishing           Furnishing      @default(UNFURNISHED)
+  availableFrom        DateTime?
+  amenities            Json
+  estWaterBill         Int?
+  estElectricityBill   Int?
+  serviceCharge        Int?
+  garbageFee           Int?
+  status               ListingStatus   @default(DRAFT)
+  isFeatured           Boolean         @default(false)
+  freshnessConfirmedAt DateTime?
+  reportCount          Int             @default(0)
+  viewCount            Int             @default(0)
+  whatsappTapCount     Int             @default(0)
+  saveCount            Int             @default(0)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  expiresAt            DateTime?
+
+  photos        ListingPhoto[]
+  matautuRoutes ListingMatutuRoute[]
+  savedBy       SavedListing[]
+  viewings      ViewingRequest[]
+  reviews       Review[]
+  reports       Report[]
+  transactions  Transaction[]
+}
+
+model ListingPhoto {
+  id           String   @id @default(uuid())
+  listingId    String
+  listing      Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  cloudinaryId String
+  url          String
+  thumbnailUrl String?
+  roomType     String?
+  isPrimary    Boolean  @default(false)
+  isVideo      Boolean  @default(false)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+}
+
+model MatutuRoute {
+  id               String             @id @default(uuid())
+  routeNumber      String
+  name             String
+  origin           String
+  destination      String
+  frequencyMinutes Int?
+  operatingHours   String?
+  routeGeojson     Json?
+  stops            Json?
+  createdAt        DateTime           @default(now())
+
+  listings ListingMatutuRoute[]
+}
+
+model ListingMatutuRoute {
+  id              String      @id @default(uuid())
+  listingId       String
+  listing         Listing     @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  routeId         String
+  route           MatutuRoute @relation(fields: [routeId], references: [id])
+  nearestStopName String?
+  distanceMeters  Int?
+  walkMinutes     Int?
+}
+
+model SavedListing {
+  id        String   @id @default(uuid())
+  renterId  String
+  renter    User     @relation(fields: [renterId], references: [id], onDelete: Cascade)
+  listingId String
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  notes     String?
+  savedAt   DateTime @default(now())
+
+  @@unique([renterId, listingId])
+}
+
+model ViewingRequest {
+  id                  String        @id @default(uuid())
+  renterId            String
+  renter              User          @relation("RenterViewings", fields: [renterId], references: [id])
+  listingId           String
+  listing             Listing       @relation(fields: [listingId], references: [id])
+  agentId             String
+  agent               AgentProfile  @relation("AgentViewings", fields: [agentId], references: [id])
+  scheduledAt         DateTime
+  status              ViewingStatus @default(PENDING)
+  renterConfirmedShow Boolean?
+  agentConfirmedShow  Boolean?
+  listingAsDescribed  Boolean?
+  renterRating        Int?
+  renterComment       String?
+  createdAt           DateTime      @default(now())
+
+  review Review?
+}
+
+model Review {
+  id                   String          @id @default(uuid())
+  reviewerId           String
+  reviewer             User            @relation("ReviewsGiven", fields: [reviewerId], references: [id])
+  agentId              String
+  agent                AgentProfile    @relation("ReviewsReceived", fields: [agentId], references: [id])
+  listingId            String
+  listing              Listing         @relation(fields: [listingId], references: [id])
+  viewingRequestId     String?         @unique
+  viewingRequest       ViewingRequest? @relation(fields: [viewingRequestId], references: [id])
+  moveInConfirmed      Boolean         @default(false)
+  listingAccuracy      Int?
+  agentProfessionalism Int?
+  depositHandling      Int?
+  communication        Int?
+  wouldRecommend       Boolean?
+  comment              String?
+  isPublic             Boolean         @default(false)
+  createdAt            DateTime        @default(now())
+}
+
+model Report {
+  id          String       @id @default(uuid())
+  reporterId  String
+  reporter    User         @relation(fields: [reporterId], references: [id])
+  listingId   String
+  listing     Listing      @relation(fields: [listingId], references: [id])
+  agentId     String
+  reason      ReportReason
+  description String?
+  status      ReportStatus @default(OPEN)
+  resolvedAt  DateTime?
+  resolverId  String?
+  createdAt   DateTime     @default(now())
+}
+
+model Transaction {
+  id                 String            @id @default(uuid())
+  renterId           String
+  renter             User              @relation("RenterTransactions", fields: [renterId], references: [id])
+  agentId            String
+  listingId          String
+  listing            Listing           @relation(fields: [listingId], references: [id])
+  type               TransactionType
+  amountKes          Int
+  mpesaCheckoutId    String?
+  mpesaTransactionId String?
+  status             TransactionStatus @default(INITIATED)
+  escrowExpiresAt    DateTime?
+  releasedAt         DateTime?
+  refundedAt         DateTime?
+  notes              String?
+  createdAt          DateTime          @default(now())
+}
+
+model Notification {
+  id        String              @id @default(uuid())
+  userId    String
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  body      String
+  data      Json?
+  channel   NotificationChannel @default(IN_APP)
+  readAt    DateTime?
+  sentAt    DateTime?
+  createdAt DateTime            @default(now())
+}
+
+model SearchLog {
+  id           String   @id @default(uuid())
+  sessionId    String?
+  userId       String?
+  areaId       String?
+  unitTypes    String[]
+  priceMin     Int?
+  priceMax     Int?
+  filters      Json?
+  resultsCount Int?
+  createdAt    DateTime @default(now())
+}
